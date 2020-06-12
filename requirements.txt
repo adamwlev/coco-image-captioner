@@ -1,0 +1,14 @@
+requests
+uwsgi
+Flask
+boto3
+numpy
+scipy
+matplotlib
+Pillow
+opencv-python
+torch
+torchvision
+torchtext
+transformers
+efficientnet_pytorch
