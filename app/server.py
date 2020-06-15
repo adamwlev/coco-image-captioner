@@ -52,32 +52,6 @@ normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
 transform = torchvision.transforms.Compose([
                                             torchvision.transforms.ToTensor(),
                                             normalize])
-
-def get_lm_score():
-    tokenizer = transformers.GPT2Tokenizer.from_pretrained('distilgpt2')
-    lm = transformers.GPT2LMHeadModel.from_pretrained('distilgpt2')
-    lm.eval()
-    for parameter in lm.parameters():
-        parameter.requires_grad = False
-    max_length = 86
-    def lm_score(sents):
-        ## sents should be a list of strings
-        inds = torch.zeros(len(sents),max_length,dtype=torch.long)
-        mask = torch.ones(len(sents),max_length,dtype=torch.float)
-        for i in range(len(sents)):
-            tok = tokenizer.encode_plus(sents[i], add_special_tokens=True, 
-                                        return_tensors='pt', max_length=max_length)['input_ids'][0]
-            inds[i, :len(tok)] = tok
-            mask[i, len(tok):] = 0
-        logits = lm(inds)[0]
-        inds_flattened = inds.flatten()
-        indexer = torch.arange(0,inds_flattened.size(0),dtype=torch.long)
-        chosen_words = logits.view(logits.size(0)*logits.size(1),-1)[indexer,inds_flattened]
-        chosen_words = chosen_words.view(logits.size(0),logits.size(1))
-        lm_scores = nn.functional.logsigmoid(chosen_words * mask).sum(1).numpy()
-        lm_scores /= mask.sum(1).numpy()
-        return lm_scores
-    return lm_score
     
 class Captioner(nn.Module):
     def __init__(self, vocab):
@@ -95,38 +69,33 @@ class Captioner(nn.Module):
         self.classifier = nn.Linear(self.pic_emb_size,self.vocab_size)
         self.start_tok_embed = nn.Parameter(torch.randn(self.word_emb_size,
                                                         dtype=torch.float32),requires_grad=True)
-        self.lm_score = get_lm_score()
 
-    def inference(self, im, num_sample=7, max_length=32, topk=2):
+    def inference(self, im, device, max_length=32):
         with torch.no_grad():
-            sents = []
-            for it in range(num_sample):
-                bs = 1
-                ims = im.unsqueeze(0)
-                im_embs = self.encoder.extract_features(ims)
-                im_embs = self.average_pooling(im_embs).view(bs,self.pic_emb_size)
-                hidden = im_embs.unsqueeze(0)
-                word_emb = self.start_tok_embed.expand(bs,1,self.word_emb_size)
-                preds = []
-                for i in range(max_length):
-                    _, hidden = self.decoder(word_emb, hidden)
-                    pred = self.classifier(hidden.squeeze(0)).squeeze()
-                    pred = nn.functional.softmax(pred,dim=0)
-                    top_preds = torch.topk(pred,topk)
-                    top_preds_inds = top_preds.indices.cpu().numpy()
-                    top_preds_values = top_preds.values.cpu().numpy()
-                    top_preds_values = top_preds_values[top_preds_inds!=1]
-                    top_preds_inds = top_preds_inds[top_preds_inds!=1]
-                    top_preds_values = top_preds_values/top_preds_values.sum()
-                    pred = np.random.choice(top_preds_inds,p=top_preds_values)
-                    if pred==0:
-                        break
-                    word_emb = self.vocab.vectors[pred].view(bs,1,self.word_emb_size)
-                    preds.append(self.vocab.itos[pred])
-                sents.append(' '.join(preds))
-            scores = self.lm_score(sents)
-            logger.info(sents)
-            return sents[np.argmax(scores)]
+            sent = []
+            bs = 1
+            ims = im.unsqueeze(0)
+            im_embs = self.encoder.extract_features(ims)
+            im_embs = self.average_pooling(im_embs).view(bs,self.pic_emb_size)
+            hidden = im_embs.unsqueeze(0)
+            word_emb = self.start_tok_embed.expand(bs,1,self.word_emb_size)
+            for i in range(max_length):
+                _, hidden = self.decoder(word_emb, hidden)
+                pred = self.classifier(hidden.squeeze(0)).squeeze()
+                pred = nn.functional.softmax(pred,dim=0)
+                top_preds = torch.topk(pred,topk)
+                top_preds_inds = top_preds.indices.cpu().numpy()
+                top_preds_values = top_preds.values.cpu().numpy()
+                top_preds_values = top_preds_values[top_preds_inds!=1]
+                top_preds_inds = top_preds_inds[top_preds_inds!=1]
+                top_preds_values = top_preds_values/top_preds_values.sum()
+                pred = np.random.choice(top_preds_inds,p=top_preds_values)
+                if pred==0:
+                    break
+                word_emb = self.vocab.vectors[pred].view(bs,
+                            1,self.word_emb_size).to(device)
+                sent.append(self.vocab.itos[pred])
+            return ' '.join(sent)
 
 vocab = torch.load('/project/app/weights/vocab_100k.pt')
 
