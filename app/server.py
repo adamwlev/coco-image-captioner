@@ -70,7 +70,7 @@ class Captioner(nn.Module):
         self.start_tok_embed = nn.Parameter(torch.randn(self.word_emb_size,
                                                         dtype=torch.float32),requires_grad=True)
 
-    def inference(self, im, device, max_length=32):
+    def inference(self, im, max_length=32):
         with torch.no_grad():
             sent = []
             bs = 1
@@ -86,7 +86,7 @@ class Captioner(nn.Module):
                 if pred==0:
                     break
                 word_emb = self.vocab.vectors[pred].view(bs,
-                            1,self.word_emb_size).to(device)
+                            1,self.word_emb_size)
                 sent.append(self.vocab.itos[pred])
             return ' '.join(sent)
 
