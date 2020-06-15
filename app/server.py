@@ -82,13 +82,18 @@ class Captioner(nn.Module):
             for i in range(max_length):
                 _, hidden = self.decoder(word_emb, hidden)
                 pred = self.classifier(hidden.squeeze(0)).squeeze()
-                pred = pred.argmax().item()
-                if pred==0:
+                top_preds = torch.topk(pred,2).indices
+                if top_preds[0].item()==0:
                     break
-                word_emb = self.vocab.vectors[pred].view(bs,
+                if top_preds[0].item()==1:
+                    top_pred = top_preds[1].item()
+                else:
+                    top_pred = top_preds[0].item()
+
+                word_emb = self.vocab.vectors[top_pred].view(bs,
                             1,self.word_emb_size)
-                sent.append(self.vocab.itos[pred])
-            return ' '.join(sent)
+                sent.append(self.vocab.itos[top_pred])
+            return ' '.join(sent) 
 
 vocab = torch.load('/project/app/weights/vocab_100k.pt')
 
