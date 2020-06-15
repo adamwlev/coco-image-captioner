@@ -82,14 +82,7 @@ class Captioner(nn.Module):
             for i in range(max_length):
                 _, hidden = self.decoder(word_emb, hidden)
                 pred = self.classifier(hidden.squeeze(0)).squeeze()
-                pred = nn.functional.softmax(pred,dim=0)
-                top_preds = torch.topk(pred,topk)
-                top_preds_inds = top_preds.indices.cpu().numpy()
-                top_preds_values = top_preds.values.cpu().numpy()
-                top_preds_values = top_preds_values[top_preds_inds!=1]
-                top_preds_inds = top_preds_inds[top_preds_inds!=1]
-                top_preds_values = top_preds_values/top_preds_values.sum()
-                pred = np.random.choice(top_preds_inds,p=top_preds_values)
+                pred = pred.argmax().item()
                 if pred==0:
                     break
                 word_emb = self.vocab.vectors[pred].view(bs,
